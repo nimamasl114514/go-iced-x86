@@ -1,4 +1,4 @@
-module github.com/wwww/go-iced-x86
+module github.com/nimamasl114514/go-iced-x86
 
 go 1.25.0
 

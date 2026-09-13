@@ -52,7 +52,7 @@ import (
 	"fmt"
 	"log"
 
-	icedx86 "github.com/wwww/go-iced-x86"
+	icedx86 "github.com/nimamasl114514/go-iced-x86"
 )
 
 func main() {
