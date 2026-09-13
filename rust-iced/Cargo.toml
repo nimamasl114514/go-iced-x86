@@ -1,0 +1,16 @@
+[package]
+name = "iced-go-ffi"
+version = "0.1.0"
+edition = "2021"
+description = "C ABI shim over iced-x86, consumed by go-iced-x86 via purego"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+iced-x86 = "1.21"
+
+[profile.release]
+opt-level = 3
+lto = true
+
