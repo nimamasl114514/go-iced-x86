@@ -17,4 +17,3 @@ var libFileName = map[string]string{
 func openLibrary(path string) (uintptr, error) {
 	return purego.Dlopen(path, purego.RTLD_NOW|purego.RTLD_GLOBAL)
 }
-

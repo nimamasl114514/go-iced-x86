@@ -162,3 +162,110 @@ pub extern "C" fn iced_string_free(s: *mut c_char) {
     }
 }
 
+
+// ============================================================================
+// 扩展 API：多语法格式化 / 批量解码 / Code 常量表
+// ============================================================================
+
+use iced_x86::{Code, GasFormatter, MasmFormatter, NasmFormatter};
+use std::convert::TryFrom;
+
+/// 字符串装箱辅助：String -> 堆上 C 字符串（内嵌 NUL 时失败返回 null）。
+fn cstr(s: String) -> *mut c_char {
+    match CString::new(s) {
+        Ok(s) => s.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// 按位掩码应用格式化选项（位定义见 iced_format 文档注释）。
+fn apply_opts<F: Formatter>(f: &mut F, opts: u32) {
+    let o = f.options_mut();
+    if opts & (1 << 0) != 0 { o.set_space_after_operand_separator(true); }
+    if opts & (1 << 1) != 0 { o.set_space_after_memory_bracket(true); }
+    if opts & (1 << 2) != 0 { o.set_uppercase_all(true); }
+    if opts & (1 << 3) != 0 { o.set_show_zero_displacements(true); }
+    if opts & (1 << 4) != 0 { o.set_uppercase_hex(true); }
+    if opts & (1 << 5) != 0 { o.set_always_show_segment_register(true); }
+}
+
+/// 多语法格式化。syntax: 0=Intel 1=Gas(AT&T) 2=Masm 3=Nasm；opts 位掩码：
+/// bit0 操作数分隔符后空格 / bit1 内存括号后空格 / bit2 全大写 /
+/// bit3 显示零位移 / bit4 十六进制大写 / bit5 总显示段寄存器。
+/// 返回堆上 C 字符串（调用方用 iced_string_free 释放）；非法参数返回 null。
+#[no_mangle]
+pub extern "C" fn iced_format(instruction: *const Instruction, syntax: c_int, opts: u32) -> *mut c_char {
+    if instruction.is_null() {
+        return std::ptr::null_mut();
+    }
+    let inst = unsafe { &*instruction };
+    let mut output = String::new();
+    macro_rules! fmt_with {
+        ($f:expr) => {{
+            let mut f = $f;
+            apply_opts(&mut f, opts);
+            f.format(inst, &mut output);
+        }};
+    }
+    match syntax {
+        0 => fmt_with!(IntelFormatter::new()),
+        1 => fmt_with!(GasFormatter::new()),
+        2 => fmt_with!(MasmFormatter::new()),
+        3 => fmt_with!(NasmFormatter::new()),
+        _ => return std::ptr::null_mut(),
+    }
+    cstr(output)
+}
+
+/// 批量解码：至多 max 条，按 stride 字节间隔写入 out
+/// （stride 必须 >= iced_instruction_size()；out 无需对齐，内部 write_unaligned）。
+/// 返回实际写入条数。
+#[no_mangle]
+pub extern "C" fn iced_decode_all(
+    decoder: *mut Decoder<'static>,
+    out: *mut u8,
+    stride: usize,
+    max: usize,
+) -> usize {
+    if decoder.is_null() || out.is_null() || max == 0 || stride < std::mem::size_of::<Instruction>() {
+        return 0;
+    }
+    let decoder = unsafe { &mut *decoder };
+    let mut n = 0usize;
+    while n < max && decoder.can_decode() {
+        let slot = unsafe { out.add(n * stride) as *mut Instruction };
+        unsafe { std::ptr::write_unaligned(slot, decoder.decode()) };
+        n += 1;
+    }
+    n
+}
+
+/// Code 枚举条目总数。
+#[no_mangle]
+pub extern "C" fn iced_code_count() -> u32 {
+    Code::values().len() as u32
+}
+
+/// 按枚举序号取 Code：名称经返回值返回（调用方用 iced_string_free 释放），
+/// 枚举值写入 *out_value（可为 null）。index 越界返回 null。
+#[no_mangle]
+pub extern "C" fn iced_code_at(index: u32, out_value: *mut u32) -> *mut c_char {
+    match Code::values().nth(index as usize) {
+        Some(c) => {
+            if !out_value.is_null() {
+                unsafe { *out_value = c as u32; }
+            }
+            cstr(format!("{:?}", c))
+        }
+        None => std::ptr::null_mut(),
+    }
+}
+
+/// 按枚举值取 Code 名称（如 "Mov_rm64_r64"）；非法值返回 null。
+#[no_mangle]
+pub extern "C" fn iced_code_name(code: u32) -> *mut c_char {
+    match Code::try_from(code as usize) {
+        Ok(c) => cstr(format!("{:?}", c)),
+        Err(_) => std::ptr::null_mut(),
+    }
+}

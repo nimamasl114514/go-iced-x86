@@ -37,6 +37,12 @@ var (
 	fnInstructionNearBranchTarget func(instruction uintptr) uint64
 	fnFormatIntel                 func(instruction uintptr) uintptr
 	fnStringFree                  func(s uintptr)
+
+	fnFormat    func(instruction uintptr, syntax int32, opts uint32) uintptr
+	fnDecodeAll func(decoder uintptr, out uintptr, stride uintptr, max uintptr) uintptr
+	fnCodeCount func() uint32
+	fnCodeAt    func(index uint32, outValue *uint32) uintptr
+	fnCodeName  func(code uint32) uintptr
 )
 
 var (
@@ -90,6 +96,12 @@ func bindFunctions() {
 	purego.RegisterLibFunc(&fnInstructionNearBranchTarget, libHandle, "iced_instruction_near_branch_target")
 	purego.RegisterLibFunc(&fnFormatIntel, libHandle, "iced_format_intel")
 	purego.RegisterLibFunc(&fnStringFree, libHandle, "iced_string_free")
+
+	purego.RegisterLibFunc(&fnFormat, libHandle, "iced_format")
+	purego.RegisterLibFunc(&fnDecodeAll, libHandle, "iced_decode_all")
+	purego.RegisterLibFunc(&fnCodeCount, libHandle, "iced_code_count")
+	purego.RegisterLibFunc(&fnCodeAt, libHandle, "iced_code_at")
+	purego.RegisterLibFunc(&fnCodeName, libHandle, "iced_code_name")
 }
 
 // goString 将 C 字符串指针复制为 Go string（手动测长，不依赖外部转换）。
@@ -108,4 +120,3 @@ func goString(cstr uintptr) string {
 	// unsafe.String 共享底层字节会导致 use-after-free（free 后首字节被分配器改写）。
 	return string(unsafe.Slice((*byte)(unsafe.Pointer(cstr)), n))
 }
-

@@ -203,4 +203,3 @@ func TestFormatNoLeakSmoke(t *testing.T) {
 		d.Close()
 	}
 }
-

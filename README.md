@@ -127,3 +127,13 @@ go-iced-x86/
 
 绑定层代码 MIT。iced-x86 本身遵循其上游许可证（MIT）。
 
+
+## 扩展 API
+
+- `Instruction.Format(syntax, opts)`：多语法格式化（`SyntaxIntel` / `SyntaxGas` / `SyntaxMasm` / `SyntaxNasm`），
+  选项位 `OptUppercaseAll`、`OptSpaceAfterOperandSeparator`、`OptShowZeroDisplacements` 等；
+  `FormatIntel()` 等价于 `Format(SyntaxIntel, 0)`
+- `Decoder.DecodeAll(max)`：单次跨越 FFI 边界的批量解码，语义与逐条 `Decode()` 等价
+- Code 常量表：`codes.go` 内置全部 4935 项 `Code*` 常量（数据源 iced-x86 1.21.0）；
+  运行时查询 `CodeCount()` / `CodeName(code)` / `CodeAt(index)`；
+  重新生成：`go run ./cmd/gencode > codes.go`

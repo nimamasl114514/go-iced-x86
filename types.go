@@ -119,7 +119,7 @@ func (d *Decoder) Close() {
 // Instruction 一条已解码指令。
 // 内存由 Go 侧分配（尺寸与对齐由 Rust 库运行时报告），Rust 侧按值写入。
 type Instruction struct {
-	buf  []byte // 底层分配，防止 GC
+	buf  []byte  // 底层分配，防止 GC
 	data uintptr // buf 内满足对齐要求的起始地址
 }
 
@@ -167,3 +167,86 @@ func (i *Instruction) FormatIntel() string {
 // String 实现 fmt.Stringer，等同 FormatIntel。
 func (i *Instruction) String() string { return i.FormatIntel() }
 
+// ============================================================================
+// 扩展 API：多语法格式化 / 批量解码 / Code 常量表
+// ============================================================================
+
+// Syntax 汇编输出语法风格。
+type Syntax int
+
+const (
+	SyntaxIntel Syntax = iota // Intel 语法（默认）
+	SyntaxGas                 // AT&T 语法
+	SyntaxMasm                // MASM 语法
+	SyntaxNasm                // NASM 语法
+)
+
+// FormatOptions 格式化选项位掩码，位定义与 rust-iced lib.rs 保持一致。
+type FormatOptions uint32
+
+const (
+	OptSpaceAfterOperandSeparator FormatOptions = 1 << iota // 操作数分隔符后加空格
+	OptSpaceAfterMemoryBracket                              // 内存括号后加空格
+	OptUppercaseAll                                         // 全部大写
+	OptShowZeroDisplacements                                // 显示零位移
+	OptUppercaseHex                                         // 十六进制数字大写
+	OptAlwaysShowSegmentRegister                            // 总显示段寄存器
+)
+
+// Format 按指定语法与选项格式化指令；syntax 非法或库未加载时返回空串。
+// 每次调用在 Rust 侧新建 formatter；如需高频格式化请批量调用方复用结果。
+func (i *Instruction) Format(syntax Syntax, opts FormatOptions) string {
+	p := fnFormat(i.data, int32(syntax), uint32(opts))
+	if p == 0 {
+		return ""
+	}
+	s := goString(p)
+	fnStringFree(p)
+	return s
+}
+
+// DecodeAll 批量解码至多 max 条指令，数据耗尽时返回条数少于 max。
+// 与逐条 Decode 语义等价，但只跨一次 FFI 边界，适合整段反汇编。
+// 返回的指令共享同一块底层缓冲（随任一指令保活）。
+func (d *Decoder) DecodeAll(max int) []*Instruction {
+	if d.ptr == 0 || max <= 0 {
+		return nil
+	}
+	stride := instructionSize + instructionAlign
+	raw := make([]byte, max*stride+instructionAlign)
+	mask := uintptr(instructionAlign - 1)
+	first := (uintptr(unsafe.Pointer(&raw[0])) + mask) &^ mask
+	n := int(fnDecodeAll(d.ptr, first, uintptr(stride), uintptr(max)))
+	out := make([]*Instruction, 0, n)
+	for k := 0; k < n; k++ {
+		out = append(out, &Instruction{buf: raw, data: first + uintptr(k*stride)})
+	}
+	return out
+}
+
+// CodeCount 返回 iced-x86 Code 枚举的条目总数。
+func CodeCount() int { return int(fnCodeCount()) }
+
+// CodeName 返回 Code 枚举值对应的名称（如 "Mov_rm64_r64"）；非法值 ok=false。
+func CodeName(code uint32) (name string, ok bool) {
+	p := fnCodeName(code)
+	if p == 0 {
+		return "", false
+	}
+	s := goString(p)
+	fnStringFree(p)
+	return s, true
+}
+
+// CodeAt 按枚举序号取 Code 值与名称（0 <= index < CodeCount()）。
+// 用于离线生成常量表（见 cmd/gencode）。
+func CodeAt(index int) (code uint32, name string, ok bool) {
+	var v uint32
+	p := fnCodeAt(uint32(index), &v)
+	if p == 0 {
+		return 0, "", false
+	}
+	s := goString(p)
+	fnStringFree(p)
+	return v, s, true
+}
